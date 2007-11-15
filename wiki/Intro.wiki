@@ -3,6 +3,7 @@
 ==Introduction==
 Release 0.1 of a deniable file system.
 
+Please dont use to store anything important. The name should be enough of a warning.
 ==Contents==
 {{{
  amnesia.py - library
@@ -61,6 +62,12 @@ amnesia fuse bindings
 """
 }}}
 
- = contact =
+==currently broken==
+Links
+Free space calculation - amnesia doesnt test if you actually have space to allocate
+invalid literal - can kill your fs
+no test suite
+
+==contact==
 
 [mailto:cartel@thoughtcrime.org.nz]
