@@ -62,11 +62,13 @@ amnesia fuse bindings
 """
 }}}
 
-==currently broken==
-Links
+==todo==
+{{{
+fix links
 Free space calculation - amnesia doesnt test if you actually have space to allocate
-invalid literal - can kill your fs
-no test suite
+fix invalid literal bug - can kill the fs
+test suite
+}}}
 
 ==contact==
 
