@@ -19,7 +19,6 @@ import time
 import fuse
 
 
-# le sigh
 blocksize = 4096
 
 class Hyperblock():
