@@ -473,7 +473,7 @@ class Superblock():
         self.blocklist = blocklist
         try:
             self.root, self.blocklist = self.reload()
-        except IOError:
+        except (IOError, ValueError):
             # superblock structure does not exist in block, flush and reload.
             self.flush()
             self.root, self.blocklist = self.reload()
