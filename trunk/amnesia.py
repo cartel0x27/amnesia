@@ -547,81 +547,97 @@ class Superblock():
     def flush(self):
         # Write the superblock out to disk.
         k = self.key
+        #print "--- flush --- %s"%k.hexdigest()
         a = AES.new(k.digest())
         # this is gonna change. overload the pickle/unpickle functionality
         # so the entire object is not serialised.
         # then rebuild at runtime to include references etc.
-        plaintext = zlib.compress(pickle.dumps(self.root))
+        plaintext = pickle.dumps(self.root)
         allocated = []
         ciphertext = a.encrypt(pad(plaintext, 16))
+        #print "lengths: %s cipher %s plain"%(len(ciphertext), len(plaintext))
         remaining = len(ciphertext)
         thisblock = hyper_instance.SuperEntrypoint(self)
         hyper_instance.reserved_bytes[k] = thisblock
         offset = (thisblock[0] * hyper_instance.blocksize) + thisblock[1]
+        #print "seeking to: %s"%offset
         hyper_instance.backend.seek(offset)
-        hyper_instance.backend.write(a.encrypt(pad(str(len(plaintext)), 16)))
+        hyper_instance.backend.write(a.encrypt(pad(str(remaining), 16)))
+        #print "new tell: %s"%hyper_instance.backend.tell()
         lastwrite = 0
+        reserved = 48
+        #print " -- begin loop"
         while remaining > 0:
+        #    print "loop entry tell: %s"%hyper_instance.backend.tell()
+        #    print "remaining: %s"%remaining
             thisblockremaining = thisblock[2] - thisblock[1]
-            thiswrite =  remaining if thisblockremaining - 32 > remaining else thisblockremaining - 32
+            thiswrite =  remaining if thisblockremaining - reserved >= remaining else thisblockremaining - reserved
+            reserved = 32
+        #    print "thiswrite: %s"%thiswrite
             hyper_instance.backend.write(a.encrypt(pad(str(thiswrite), 16)))
-            thisrange = slice(lastwrite, thiswrite)
+            thisrange = slice(lastwrite, thiswrite+lastwrite)
+        #    print "thisrange: %s"%thisrange
             hyper_instance.backend.write(ciphertext[thisrange])
             thisblock = (thisblock[0], thisblock[1], thisblock[1] + thiswrite)
             allocated.append(thisblock)
             remaining -= thiswrite
+            lastwrite = thiswrite
             if remaining == 0:
                 break
             try:
                 thisblock = hyper_instance.allocate(byoffset=int(a.decrypt(hyper_instance.backend.read(16))))
             except:
                 thisblock = hyper_instance.allocate()
+        #    print "allocated: %s"%str(thisblock)
+        #    print "tell: %s"%hyper_instance.backend.tell()
             hyper_instance.backend.write(a.encrypt(pad(str((thisblock[0] * hyper_instance.blocksize) + thisblock[1]), 16)))
-            hyper_instance.backend.seek(thisblock[0])
+            hyper_instance.backend.seek((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
+        #    print "new tell: %s"%hyper_instance.backend.tell()
+        #print "final tell: %s"%hyper_instance.backend.tell()
         self.blocklist = allocated
         #print "flushed superblock for key %s"%self.key.hexdigest()
         hyper_instance.backend.flush()
+
     def reload(self):
         # Reload the superblock from disk.
         k = self.key
+        #print "--- reload --- %s"%k.hexdigest()
         self.entryblock = hyper_instance.SuperEntrypoint(self)
         a = AES.new(k.digest())
         #print "seeking superblock at %s"%[self.entryblock]
-        hyper_instance.backend.seek((self.entryblock[0] * hyper_instance.blocksize) + self.entryblock[1])
-        thisblock = self.entryblock
-        usedblocks = set()
-        try:
-            plaintextlength = int(a.decrypt(hyper_instance.backend.read(16)))
-            remaining = padlength(plaintextlength)
-        except:
-            print "could not get superblock entry, possible corruption or does not exist"
-            raise IOError(-2, "no such file or directory")
         ciphertext = ""
-        while remaining > 0:
-            #print "%s bytes remaining in superblock read"%remaining
-            try:
-                thisread = int(a.decrypt(hyper_instance.backend.read(16)))
-                #print "before: %s"% [thisblock]
-                thisblock = (thisblock[0], thisblock[1], thisblock[1] + thisread)
-                #print "after: %s"% [thisblock]
-            except:
-                print "could not get chunk length"
-                raise ValueError
-            try:
-                #print "reading %s bytes"%thisread
-                ciphertext = ciphertext + hyper_instance.backend.read(thisread)
-            except:
-                print "superblock read failed"
-                raise ValueError
+        allocated = []
+        thisblock = hyper_instance.SuperEntrypoint(self)
+        #print "entrypoint: %s,%s,%s"%thisblock
+        hyper_instance.reserved_bytes[k] = thisblock
+        offset = (thisblock[0] * hyper_instance.blocksize) + thisblock[1]
+        #print("seeking to: %s"%offset)
+        hyper_instance.backend.seek(offset)
+        remaining =  int(a.decrypt(hyper_instance.backend.read(16)))
+        #print "new tell: %s"%hyper_instance.backend.tell()
+        lastread = 0
+        #print " -- begin loop"
+        while remaining >= 0:
+        #    print "loop entry tell: %s"%hyper_instance.backend.tell()
+        #    print "remaining: %s"%remaining
+            thisread =  int(a.decrypt(hyper_instance.backend.read(16)))
+        #    print "thisread: %s"%thisread
+            ciphertext += hyper_instance.backend.read(thisread)
+            allocated.append(thisblock)
             remaining -= thisread
-            usedblocks.add(thisblock)
-            if remaining != 0:
-                thisblock = hyper_instance.allocate(byoffset=int(a.decrypt(hyper_instance.backend.read(16))))
-                hyper_instance.backend.seek((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
-        #print "ciphertext length: %s"%len(ciphertext)
-        plaintext = a.decrypt(ciphertext)[:plaintextlength]
-        #print "plaintext length: %s"%len(plaintext)
-        return pickle.loads(zlib.decompress(plaintext)), usedblocks
+        #    print "tell: %s"%hyper_instance.backend.tell()
+            dump = hyper_instance.backend.read(16)
+        #    print "dump: %s"%dump
+            if remaining == 0:
+                break
+            thisblock = hyper_instance.allocate(byoffset=int(a.decrypt(hyper_instance.backend.read(16))))
+        #    print "allocated: %s"%str(thisblock)
+            hyper_instance.backend.seek((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
+        #    print "offset: %s"%str((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
+        #print "final tell: %s"%hyper_instance.backend.tell()
+        plaintext = a.decrypt(ciphertext)
+        self.blocklist = allocated
+        return pickle.loads(plaintext), allocated
 
 
 def pad(a, b):
@@ -634,9 +650,8 @@ def munge(x):
 
 def frunge(x, y):
     """Frunge x into smaller numbers until it fits in y."""
-    while x > y:
-        x = int(str(x)[:len(str(x)) - 1])
-    #print "frunging to: %s"%x
+    x = x % y
+    print "frunging to: %s"%x
     return x
 
 def padlength(i):
@@ -672,8 +687,8 @@ def transpose(path, s):
 
 
 if __name__ == "__main__":
-    plaintext_keys = ["lulz", "epic", "oh my gosh, hi to you"]
-    hyperblock = Hyperblock(open("/tmp/lulz", "r+"))
+    plaintext_keys = ["foo", "bar"]
+    hyperblock = Hyperblock(open("lulz", "r+"))
     superblocks = hyper_instance._superblocks
     #reserved_bytes = {}
     #blocksize = 4096
@@ -692,7 +707,7 @@ if __name__ == "__main__":
     print "hyper: %s"%hyper_instance
     
     #
-    #superblocks[0].create(FileEntry("amnesia.py"), plaintext=open("./amnesia.py"))
+    superblocks[1].create(FileEntry("amnesia.py"), plaintext=open("./amnesia.py"))
     
     #transpose("/amnesia.py", superblocks[0])
     #print "new super: %s"%hyper_instance.resolve("/amnesia.py").superblock.key.hexdigest()
