@@ -17,6 +17,7 @@ import random
 import zlib
 import time
 import fuse
+import doctest
 
 
 blocksize = 4096
@@ -649,13 +650,12 @@ def munge(x):
     return x
 
 def frunge(x, y):
-    """Frunge x into smaller numbers until it fits in y."""
+    """
+    Frunge x into smaller numbers until it fits in y.
+    """
     x = x % y
-    print "frunging to: %s"%x
+    #print "frunging to: %s"%x
     return x
-
-def padlength(i):
-    return (int(i / 16) +1) * 16
 
 def transpose(path, s):
     """transpose an object from path into superblock s"""
@@ -685,36 +685,28 @@ def transpose(path, s):
     dest.append(t)
     s.flush()
 
+def main():
+    """
+    >>> import tempfile, os
+    >>> handle, name = tempfile.mkstemp()
+    >>> x = os.fdopen(handle, "r+")
+    >>> x.seek(1048576)
+    >>> x.write("x")
+    >>> x.close()
+    >>> x = open(name, "r+")
+    >>> plaintext_keys = ["foo", "bar"]
+    >>> hyper_instance = Hyperblock(x)
+    >>> superblocks = hyper_instance._superblocks
+    >>> for k in plaintext_keys:
+    ...     hyper_instance.merge(Superblock(SHA256.new(k)))
+    >>> superblocks[1].create(FileEntry("amnesia.py"), plaintext=open("./amnesia.py"))
+    >>> print(list(hyper_instance.ls("/"))[2].name)
+    amnesia.py
+    >>> hyper_instance.backend.close()
+    >>> os.unlink(name)
+    """
+    doctest.testmod()
 
 if __name__ == "__main__":
-    plaintext_keys = ["foo", "bar"]
-    hyperblock = Hyperblock(open("lulz", "r+"))
-    superblocks = hyper_instance._superblocks
-    #reserved_bytes = {}
-    #blocksize = 4096
-    for k in plaintext_keys:
-        hyper_instance.merge(Superblock(SHA256.new(k)))
-    del plaintext_keys
-    del k
-    print "total size: %s (%s blocks)"%(hyper_instance.size, hyper_instance.numblocks)
-
-    # we have all the known superblocks now, merge them into the hyperblock
-    print "hyperblock has %s entries." %len(hyper_instance)
-    print "%s keys known"%len(hyper_instance.keys)
-    print "%s bytes free"%hyper_instance.freespace()
-
-    #superblocks[0].mkdir("/keke")
-    print "hyper: %s"%hyper_instance
+    main()
     
-    #
-    superblocks[1].create(FileEntry("amnesia.py"), plaintext=open("./amnesia.py"))
-    
-    #transpose("/amnesia.py", superblocks[0])
-    #print "new super: %s"%hyper_instance.resolve("/amnesia.py").superblock.key.hexdigest()
-    #print "retr: %s"%hyper_instance.resolve("/amnesia.py").retr()
-    
-    #print [j for j in superblocks[0].root.entries][0].retr()
-    
-
-    #print superblocks[0].path("/lulz/wow").entries
-    #list(hyper_instance.path("/"))[0].superblock
