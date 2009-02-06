@@ -3,7 +3,17 @@
 ==Introduction==
 Release 0.1 of a deniable file system.
 
-Please dont use to store anything important. The name should be enough of a warning.
+Amnesia is the only file system designed to destroy your files. Please don't use it for anything other than what you are better off deleting.
+
+==Acquiring Amnesia==
+
+Amnesia is only available from googlecode.com SVN.
+
+{{{
+svn checkout http://amnesia.googlecode.com/svn/trunk/ amnesia
+}}}
+
+
 ==Contents==
 {{{
  amnesia.py - library
@@ -64,12 +74,12 @@ amnesia fuse bindings
 
 ==todo==
 {{{
-fix links
+fix symbolic links 
 Free space calculation - amnesia doesnt test if you actually have space to allocate
-fix invalid literal bug - can kill the fs
-test suite
+fix invalid literal bug - seems to be fixed
+test suite - started
 }}}
 
 ==contact==
 
-[mailto:cartel@thoughtcrime.org.nz]
+[mailto:cartel@cypherpunk.org.nz]
