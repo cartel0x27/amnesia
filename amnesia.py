@@ -18,6 +18,7 @@ import zlib
 import time
 import fuse
 import doctest
+import logger
 
 
 blocksize = 4096
@@ -31,7 +32,7 @@ class Hyperblock():
         global hyper_instance
         try:
             if hyper_instance:
-                print "hyperblock already instanced"
+                logger.debug( "hyperblock already instanced")
                 raise ConcurrencyError
         except:
             hyper_instance = self
@@ -129,7 +130,7 @@ class Hyperblock():
             else:
                 raise IOError(2, "no such file or directory")
         else:
-            #print d.entries
+            logger.debug(d.entries)
             return d
 
     def allocate(self, blocklist=[], byoffset=None, super=False):
@@ -142,22 +143,22 @@ class Hyperblock():
         Allocate from the given blocklist first, even if its currently occupied.
         """
         def NextBlock(blocklist=[]):
-            #print "nextblock fired"
+            logger.debug("nextblock fired")
             for i in blocklist:
-                print "got i: %s"%[i]
+                logger.debug("got i: %s"%[i])
                 yield i
             while True:
                 yield None
         
-            #print "allocated_blocks: %s"%self.allocated_blocks()
-        #print "super: %s"%super
+            logger.debug("allocated_blocks: %s"%self.allocated_blocks())
+        logger.debug("super: %s"%super)
         def updateAdict():
             f = []
             adict = {}
 
             for i in self.allocated_blocks():
                 # handling multiple frags in a block is hard
-                #print "checking fdict for: %s"%[i]
+                logger.debug("checking fdict for: %s"%[i])
                 if adict.has_key(i[0]):
                     low = self.adict[i[0]][1] if adict[i[0]][0] < i[1] else i[1]
                     high = self.adict[i[0]][2] if adict[i[0]][2] > i[2] else i[2]
@@ -165,10 +166,10 @@ class Hyperblock():
                 else:
                     adict[i[0]] = i
                     f.append(i[0])
-            #print "adict has %s entries."%len(adict.keys())
+            logger.debug("adict has %s entries."%len(adict.keys()))
             self.space = set(range(0, self.numblocks)) - set(f)
-        #print "byoffset, bs: %s, %s"%(byoffset, blocksize)
-        #print "allocating block from %s possibilities"%len(self.space)
+            logger.debug("byoffset, bs: %s, %s"%(byoffset, blocksize))
+            logger.debug("allocating block from %s possibilities"%len(self.space))
             return adict
         
         self.adict = updateAdict()
@@ -183,11 +184,9 @@ class Hyperblock():
                 n = NextBlock(blocklist).next()
             else:
                 n = (random.choice(list(self.space)), 0, self.blocksize)
-        #print "choice: %s"%[n]
-
-        #print "selecton: %s"%n
+        logger.debug("choice: %s"%[n])
         if self.adict.has_key(n[0]):
-                #print "possible collision detected"
+                logger.debug("possible collision detected")
                 if super != False:
                     if n != super.entryblock:
                         print "allocating a super entrypoint."
@@ -221,7 +220,7 @@ class Hyperblock():
         return free
     def resolve(self, query):
         """ resolve query by path and return the object """
-        #print "resolving %s"%query
+        logger.debug("resolving %s"%query)
         searchpath, terminus = os.path.split(query)
         d = self.path(searchpath)
         if terminus == '':
@@ -329,7 +328,7 @@ class FileEntry(object):
         blocks = block()
         while remaining != 0:
             n = blocks.next()
-            #print "using block %s"%[n]
+            logger.debug("using block %s"%[n])
             hyper_instance.backend.seek((n[0] * hyper_instance.blocksize) + n[1])
             blockfree = n[2] - n[1]
             if remaining >= blockfree:
@@ -432,6 +431,7 @@ class Directory():
     """
     def __init__(self, name="/", stat=None, blocklist=[], entries=[]):
         self.name = name
+        logger.debug("creating directory: %s"%name)
         self.blocklist = blocklist
         if stat == None or {}:
             self.stat = DirStat()
@@ -468,7 +468,7 @@ class Directory():
         self.entries.remove(e)
 
 class Superblock():
-    def __init__(self, key, root=Directory("/"), blocklist=[]):
+    def __init__(self, key, root=Directory("/"), blocklist=[], destroy=True):
         self.root = root
         self.key = key
         self.blocklist = blocklist
@@ -476,8 +476,11 @@ class Superblock():
             self.root, self.blocklist = self.reload()
         except (IOError, ValueError):
             # superblock structure does not exist in block, flush and reload.
-            self.flush()
-            self.root, self.blocklist = self.reload()
+            if destroy:
+                self.flush()
+                self.root, self.blocklist = self.reload()
+            else:
+                raise ConcurrencyError
     def mkdir(self, name):
         """Create a Directory object and append to the relevant object"""
         x, y = os.path.split(name)
@@ -536,10 +539,10 @@ class Superblock():
                 name = f
         else:
             name = e.name
-        #print "attempting to remove %s"%name
+        logger.debug("attempting to remove %s"%name)
         for i in self.path(p).entries:
             if i.name == name:
-                #print "removing: %s"%name
+                logger.debug("removing: %s"%name)
                 self.path(p).entries.remove(i)
                 self.flush()
                 return
@@ -548,7 +551,7 @@ class Superblock():
     def flush(self):
         # Write the superblock out to disk.
         k = self.key
-        #print "--- flush --- %s"%k.hexdigest()
+        logger.debug("--- flush --- %s"%k.hexdigest())
         a = AES.new(k.digest())
         # this is gonna change. overload the pickle/unpickle functionality
         # so the entire object is not serialised.
@@ -556,28 +559,28 @@ class Superblock():
         plaintext = pickle.dumps(self.root)
         allocated = []
         ciphertext = a.encrypt(pad(plaintext, 16))
-        #print "lengths: %s cipher %s plain"%(len(ciphertext), len(plaintext))
+        logger.debug("lengths: %s cipher %s plain"%(len(ciphertext), len(plaintext)))
         remaining = len(ciphertext)
         thisblock = hyper_instance.SuperEntrypoint(self)
         hyper_instance.reserved_bytes[k] = thisblock
         offset = (thisblock[0] * hyper_instance.blocksize) + thisblock[1]
-        #print "seeking to: %s"%offset
+        logger.debug("seeking to: %s"%offset)
         hyper_instance.backend.seek(offset)
         hyper_instance.backend.write(a.encrypt(pad(str(remaining), 16)))
-        #print "new tell: %s"%hyper_instance.backend.tell()
+        logger.debug("new tell: %s"%hyper_instance.backend.tell())
         lastwrite = 0
         reserved = 48
-        #print " -- begin loop"
+        logger.debug(" -- begin loop")
         while remaining > 0:
-        #    print "loop entry tell: %s"%hyper_instance.backend.tell()
-        #    print "remaining: %s"%remaining
+            logger.debug("loop entry tell: %s"%hyper_instance.backend.tell())
+            logger.debug("remaining: %s"%remaining)
             thisblockremaining = thisblock[2] - thisblock[1]
             thiswrite =  remaining if thisblockremaining - reserved >= remaining else thisblockremaining - reserved
             reserved = 32
-        #    print "thiswrite: %s"%thiswrite
+            logger.debug("thiswrite: %s"%thiswrite)
             hyper_instance.backend.write(a.encrypt(pad(str(thiswrite), 16)))
             thisrange = slice(lastwrite, thiswrite+lastwrite)
-        #    print "thisrange: %s"%thisrange
+            logger.debug("thisrange: %s"%thisrange)
             hyper_instance.backend.write(ciphertext[thisrange])
             thisblock = (thisblock[0], thisblock[1], thisblock[1] + thiswrite)
             allocated.append(thisblock)
@@ -589,53 +592,53 @@ class Superblock():
                 thisblock = hyper_instance.allocate(byoffset=int(a.decrypt(hyper_instance.backend.read(16))))
             except:
                 thisblock = hyper_instance.allocate()
-        #    print "allocated: %s"%str(thisblock)
-        #    print "tell: %s"%hyper_instance.backend.tell()
+                logger.debug("allocated: %s"%str(thisblock))
+                logger.debug("tell: %s"%hyper_instance.backend.tell())
             hyper_instance.backend.write(a.encrypt(pad(str((thisblock[0] * hyper_instance.blocksize) + thisblock[1]), 16)))
             hyper_instance.backend.seek((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
-        #    print "new tell: %s"%hyper_instance.backend.tell()
-        #print "final tell: %s"%hyper_instance.backend.tell()
+            logger.debug("new tell: %s"%hyper_instance.backend.tell())
+            logger.debug("final tell: %s"%hyper_instance.backend.tell())
         self.blocklist = allocated
-        #print "flushed superblock for key %s"%self.key.hexdigest()
+        logger.debug("flushed superblock for key %s"%self.key.hexdigest())
         hyper_instance.backend.flush()
 
     def reload(self):
         # Reload the superblock from disk.
         k = self.key
-        #print "--- reload --- %s"%k.hexdigest()
+        logger.debug("--- reload --- %s"%k.hexdigest())
         self.entryblock = hyper_instance.SuperEntrypoint(self)
         a = AES.new(k.digest())
-        #print "seeking superblock at %s"%[self.entryblock]
+        logger.debug("seeking superblock at %s"%[self.entryblock])
         ciphertext = ""
         allocated = []
         thisblock = hyper_instance.SuperEntrypoint(self)
-        #print "entrypoint: %s,%s,%s"%thisblock
+        logger.debug("entrypoint: %s,%s,%s"%thisblock)
         hyper_instance.reserved_bytes[k] = thisblock
         offset = (thisblock[0] * hyper_instance.blocksize) + thisblock[1]
         #print("seeking to: %s"%offset)
         hyper_instance.backend.seek(offset)
         remaining =  int(a.decrypt(hyper_instance.backend.read(16)))
-        #print "new tell: %s"%hyper_instance.backend.tell()
+        logger.debug("new tell: %s"%hyper_instance.backend.tell())
         lastread = 0
-        #print " -- begin loop"
+        logger.debug(" -- begin loop")
         while remaining >= 0:
-        #    print "loop entry tell: %s"%hyper_instance.backend.tell()
-        #    print "remaining: %s"%remaining
+            logger.debug("loop entry tell: %s"%hyper_instance.backend.tell())
+            logger.debug("remaining: %s"%remaining)
             thisread =  int(a.decrypt(hyper_instance.backend.read(16)))
-        #    print "thisread: %s"%thisread
+            logger.debug("thisread: %s"%thisread)
             ciphertext += hyper_instance.backend.read(thisread)
             allocated.append(thisblock)
             remaining -= thisread
-        #    print "tell: %s"%hyper_instance.backend.tell()
+            logger.debug("tell: %s"%hyper_instance.backend.tell())
             dump = hyper_instance.backend.read(16)
-        #    print "dump: %s"%dump
+            logger.debug("dump: %s"%dump)
             if remaining == 0:
                 break
             thisblock = hyper_instance.allocate(byoffset=int(a.decrypt(hyper_instance.backend.read(16))))
-        #    print "allocated: %s"%str(thisblock)
+            logger.debug("allocated: %s"%str(thisblock))
             hyper_instance.backend.seek((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
-        #    print "offset: %s"%str((thisblock[0] * hyper_instance.blocksize) + thisblock[1])
-        #print "final tell: %s"%hyper_instance.backend.tell()
+            logger.debug("offset: %s"%str((thisblock[0] * hyper_instance.blocksize) + thisblock[1]))
+            logger.debug("final tell: %s"%hyper_instance.backend.tell())
         plaintext = a.decrypt(ciphertext)
         self.blocklist = allocated
         return pickle.loads(plaintext), allocated
@@ -654,7 +657,7 @@ def frunge(x, y):
     Frunge x into smaller numbers until it fits in y.
     """
     x = x % y
-    #print "frunging to: %s"%x
+    logger.debug("frunging to: %s"%x)
     return x
 
 def transpose(path, s):
@@ -679,8 +682,8 @@ def transpose(path, s):
     t.stat = sourceobj.stat
     p = sourceobj.retr()
     t.store(p)
-    #print "removing from these entries:"
-    #print sourceobj.reference.entries
+    logger.debug("removing from these entries:")
+    logger.debug( sourceobj.reference.entries)
     hyper_instance.unlink(path)
     dest.append(t)
     s.flush()
@@ -705,7 +708,20 @@ def main():
     >>> hyper_instance.backend.close()
     >>> os.unlink(name)
     """
-    doctest.testmod()
+    #doctest.testmod()
+    import tempfile, os
+    handle, name = tempfile.mkstemp()
+    x = os.fdopen(handle, "r+")
+    x.seek(1048576)
+    x.write("x")
+    x.close()
+    x = open(name, "r+")
+    plaintext_keys = ["foo", "bar"]
+    hyper_instance = Hyperblock(x)
+    superblocks = hyper_instance._superblocks
+    for k in plaintext_keys:
+        hyper_instance.merge(Superblock(SHA256.new(k)))
+    superblocks[1].create(FileEntry("code/amnesia"))
 
 if __name__ == "__main__":
     main()
