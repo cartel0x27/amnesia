@@ -19,6 +19,7 @@ import time
 import fuse
 import doctest
 import logger
+from pbkdf import pbkdf, hexdigest
 
 
 blocksize = 4096
@@ -149,7 +150,6 @@ class Hyperblock():
                 yield i
             while True:
                 yield None
-        
             logger.debug("allocated_blocks: %s"%self.allocated_blocks())
         logger.debug("super: %s"%super)
         def updateAdict():
@@ -173,7 +173,7 @@ class Hyperblock():
             return adict
         
         self.adict = updateAdict()
-        
+
         if byoffset != None:
             b = int(byoffset / self.blocksize)
             bentry = byoffset - (b * self.blocksize)
@@ -206,7 +206,7 @@ class Hyperblock():
 
 
     def SuperEntrypoint(self, super):
-        a = self.allocate(byoffset=frunge(int(super.key.hexdigest(), 16), self.stat.st_size), super=super)
+        a = self.allocate(byoffset=frunge(int(hexdigest(super.key), 16), self.stat.st_size), super=super)
         return a
 
     def freespace(self):
@@ -369,16 +369,16 @@ class FileEntry(object):
 
     def writeplain(self, k, plaintext):
         """Encrypt plaintext with k and writeblocks"""
-        a = AES.new(k.digest())
+        a = AES.new(k, AES.MODE_CBC)
         ciphertext = a.encrypt(pad(plaintext,16))
         self.writeblocks(ciphertext)
         self.stat.st_size = len(plaintext)
     def readplain(self, k):
         """readblocks, decrypt with k and return"""
-        a = AES.new(k.digest())
+        a = AES.new(k, AES.MODE_CBC)
         ciphertext = self.readblocks()
         print "Got %s bytes of ciphertext for file %s. Superblock says %s bytes"%(len(ciphertext),self.name, self.stat.st_size)
-        print "Decrypting using key: %s"%self.superblock.key.hexdigest()
+        print "Decrypting using key: %s"%hexdigest(self.superblock.key)
         return a.decrypt(ciphertext)[:self.stat.st_size]
     def store(self, plaintext):
         self.writeplain(self.superblock.key, plaintext)
@@ -551,12 +551,12 @@ class Superblock():
     def flush(self):
         # Write the superblock out to disk.
         k = self.key
-        logger.debug("--- flush --- %s"%k.hexdigest())
-        a = AES.new(k.digest())
+        logger.debug("--- flush --- %s"%hexdigest(k))
+        a = AES.new(k)
         # this is gonna change. overload the pickle/unpickle functionality
         # so the entire object is not serialised.
         # then rebuild at runtime to include references etc.
-        plaintext = pickle.dumps(self.root)
+        plaintext = pickle.dumps(self.root, 2)
         allocated = []
         ciphertext = a.encrypt(pad(plaintext, 16))
         logger.debug("lengths: %s cipher %s plain"%(len(ciphertext), len(plaintext)))
@@ -599,15 +599,15 @@ class Superblock():
             logger.debug("new tell: %s"%hyper_instance.backend.tell())
             logger.debug("final tell: %s"%hyper_instance.backend.tell())
         self.blocklist = allocated
-        logger.debug("flushed superblock for key %s"%self.key.hexdigest())
+        logger.debug("flushed superblock for key %s"%hexdigest(self.key))
         hyper_instance.backend.flush()
 
     def reload(self):
         # Reload the superblock from disk.
         k = self.key
-        logger.debug("--- reload --- %s"%k.hexdigest())
+        logger.debug("--- reload --- %s"%hexdigest(k))
         self.entryblock = hyper_instance.SuperEntrypoint(self)
-        a = AES.new(k.digest())
+        a = AES.new(k)
         logger.debug("seeking superblock at %s"%[self.entryblock])
         ciphertext = ""
         allocated = []
@@ -688,7 +688,7 @@ def transpose(path, s):
     dest.append(t)
     s.flush()
 
-def main():
+if __name__ == "__main__":
     """
     >>> import tempfile, os
     >>> handle, name = tempfile.mkstemp()
@@ -720,9 +720,6 @@ def main():
     hyper_instance = Hyperblock(x)
     superblocks = hyper_instance._superblocks
     for k in plaintext_keys:
-        hyper_instance.merge(Superblock(SHA256.new(k)))
+        hyper_instance.merge(Superblock(pbkdf(k, "\xdd\x9a%.4j\x9a2\xb2\xa7\x1a\x9cnPi")))
     superblocks[1].create(FileEntry("code/amnesia"))
-
-if __name__ == "__main__":
-    main()
     

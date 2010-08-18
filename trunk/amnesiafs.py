@@ -19,10 +19,8 @@ from fuse import Fuse
 from StringIO import StringIO
 from amnesia import *
 from getpass import getpass
-import smtplib
-import email
-import base64
 import logger
+from pbkdf import pbkdf
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError, \
@@ -62,7 +60,7 @@ class amnesiaFS(Fuse):
             print "need at least one key"
             raise SystemExit
         for k in plaintext_keys:
-            self.hyperblock.merge(Superblock(SHA256.new(k)))
+            self.hyperblock.merge(Superblock(pbkdf(k, "\xdd\x9a%.4j\x9a2\xb2\xa7\x1a\x9cnPi")))
         del plaintext_keys
         del k
         print "total size: %s (%s blocks)"%(self.hyperblock.size, self.hyperblock.numblocks)
@@ -328,7 +326,6 @@ class amnesiaFS(Fuse):
 
 
 def main():
-
     usage = """
 Amnesia - a deniable filesystem.
 
@@ -341,14 +338,14 @@ Amnesia - a deniable filesystem.
     server.parser.add_option(mountopt="root", metavar="DEVICE", default='/tmp/lulz',
                              help="mount amnesia from DEVICE [default: %default]")
     server.parse(values=server, errex=1)
-    
+    print server.parser
     try:
         if server.root:
             pass
     except:
         print "missing root"
-        sys.exit(1)
-    
+        raise SystemExit
+
     plaintext_keys=[]
     while True:
         k = getpass(prompt="enter key [none to continue]:")
@@ -363,26 +360,7 @@ Amnesia - a deniable filesystem.
     del plaintext_keys
     print "server starting..."
     server.main()
-    
-    # msgFile = open(root)
-    # message = StringIO.StringIO()
-    # writer = MimeWriter.MimeWriter(message)
-    # writer.addheader('From', 'root@manticore.thoughtcrime.local')
-    # writer.addheader('To', 'cartel@thoughtcrime.org.nz')
-    # writer.addheader('Subject', 'confusion')
-    # writer.startmultipartbody('mixed')
-    # part = writer.nextpart()
-    # body = part.startbody('text/plain')
-    # body.write('This is a picture of a kitten, enjoy :)')
-    # part = writer.nextpart()
-    # part.addheader('Content-Transfer-Encoding', 'base64')
-    # body = part.startbody('image/jpeg')
-    # base64.encode(msgFile, body)
-    # writer.lastpart()
-    # smtp = smtplib.SMTP('aspmx.l.google.com')
-    # smtp.sendmail('root@manticore.thoughtcrime.local', 'cartel@thoughtcrime.org.nz', message.getvalue())
-    # smtp.quit()
-        
+            
     try:
        if server.fuse_args.mount_expected():
            os.chdir(server.root)
